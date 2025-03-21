@@ -5,22 +5,16 @@ namespace Backend;
 public class UserData
 {
     public int Id { get; set; }
-    
+
     [Required]
     [StringLength(1000)]
-    public string? Description { get; set; }
+    public string Description { get; set; } = string.Empty;
 
     [Required]
-    [EmailAddress]
     [StringLength(100)]
-    public string? ProfileImage { get; set; }
+    public string ProfileImage { get; set; } = string.Empty;
 
-    public UserData(int id)
-    {
-        Id = id;
-        Description = null;
-        ProfileImage = null;
-    }
-    public UserData() { }
+    public int UserId { get; set; }
 
+    public User? User { get; set; }
 }
