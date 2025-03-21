@@ -5,6 +5,7 @@ namespace Backend
     public class UserDbContext : DbContext
     {
         public DbSet<User> Users { get; set; }
+        public DbSet<UserData> UserData { get; set; }
 
         public UserDbContext(DbContextOptions<UserDbContext> options) : base(options) { }
 

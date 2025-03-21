@@ -40,6 +40,57 @@ namespace Backend.Controllers
             return Ok(user);
         }
 
+        // рэгістрацыя
+        [HttpPost("register")]
+        public async Task<IActionResult> RegisterUser([FromBody] User authData)
+        {
+            if (await _context.Users.AnyAsync(u => u.Email == authData.Email))
+            {
+                return BadRequest(new { Message = "Карыстальнік з такім імэйлам ужо існуе" });
+            }
+
+            var newUser = new User
+            {
+                Email = authData.Email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(authData.PasswordHash)
+            };
+
+            _context.Users.Add(newUser);
+            await _context.SaveChangesAsync();
+
+            var userProfile = new UserData
+            {
+                Id = newUser.Id,
+                Description = null,
+                ProfileImage = null
+            };
+
+            _context.UserData.Add(userProfile);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = "Карыстальнік зарэгістраваны", UserId = newUser.Id });
+        }
+
+        // абнаўленне профілю
+        [HttpPut("profile/{userId}")]
+        public async Task<IActionResult> UpdateProfile(int userId, [FromBody] UserData updatedProfile)
+        {
+            var userProfile = await _context.UserData.FindAsync(userId);
+
+            if (userProfile == null)
+            {
+                return NotFound(new { Message = "Карыстальнік не знойдзены" });
+            }
+
+            userProfile.Description = updatedProfile.Description;
+            userProfile.ProfileImage = updatedProfile.ProfileImage;
+
+            _context.UserData.Update(userProfile);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { Message = "Профіль абноўлены", UserProfile = userProfile });
+        }
+        
         // POST: /Users
         [HttpPost]
         public async Task<ActionResult<User>> CreateUser(User user)
