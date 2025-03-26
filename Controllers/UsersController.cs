@@ -53,13 +53,23 @@ public class UsersController : ControllerBase
         };
     }
 
-    [HttpPost]
     [HttpPost("register")]
-    public async Task<ActionResult<UserResponseDto>> CreateUser([FromBody] UserCreateDto userDto)
+    public async Task<IActionResult> CreateUser([FromBody] UserCreateDto userDto)
     {
+        Console.WriteLine($"Received: {userDto?.Login}, {userDto?.Email}");
+
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);
+        }
+        if (string.IsNullOrEmpty(userDto.Login)) 
+        {
+            return BadRequest("Login is empty in DTO");
+        }
+
+        if (string.IsNullOrEmpty(userDto.Email))
+        {
+            return BadRequest("Email is empty in DTO");
         }
 
         if (await _context.Users.AnyAsync(u => u.Email == userDto.Email))
@@ -67,54 +77,63 @@ public class UsersController : ControllerBase
             return BadRequest(new { Message = "User with this email already exists" });
         }
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-        try
-        {   
-            var newUser = new User
-            {
-                Email = userDto.Email!,
-                Login = userDto.Login!,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password!),
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _context.Users.Add(newUser);
-            await _context.SaveChangesAsync();
-
-            _context.UserData.Add(new UserData
-            {
-                UserId = newUser.Id,
-                Description = string.Empty,
-                ProfileImage = string.Empty
-            });
-
-            _context.UserStatistics.Add(new UserStatistics
-            {
-                UserId = newUser.Id,
-                StoriesStarted = 0,
-                StoriesContributed = 0,
-                LikesReceived = 0,
-                CommentsReceived = 0
-            });
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-
-            return CreatedAtAction(nameof(GetUser), 
-                new { id = newUser.Id }, 
-                new UserResponseDto
-                {
-                    Id = newUser.Id,
-                    Email = newUser.Email,
-                    Login = newUser.Login,
-                    CreatedAt = newUser.CreatedAt
-                });
-        }
-        catch
+        var executionStrategy = _context.Database.CreateExecutionStrategy();
+        
+        return await executionStrategy.ExecuteAsync(async () =>
         {
-            await transaction.RollbackAsync();
-            throw;
-        }
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var newUser = new User
+                {
+                    Email = userDto.Email?.Trim() ?? throw new ArgumentNullException(nameof(userDto.Email)),
+                    Login = userDto.Login?.Trim() ?? throw new ArgumentNullException(nameof(userDto.Login)),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Users.Add(newUser);
+                await _context.SaveChangesAsync();
+
+                var savedUser = await _context.Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == newUser.Id);
+                Console.WriteLine($"Saved user: {savedUser?.Login}, {savedUser?.Email}");
+
+                _context.UserData.Add(new UserData
+                {
+                    UserId = newUser.Id,
+                    Description = string.Empty,
+                    ProfileImage = string.Empty
+                });
+
+                _context.UserStatistics.Add(new UserStatistics
+                {
+                    UserId = newUser.Id,
+                    StoriesStarted = 0,
+                    StoriesContributed = 0,
+                    LikesReceived = 0,
+                    CommentsReceived = 0
+                });
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return CreatedAtAction(nameof(GetUser), 
+                    new { id = newUser.Id }, 
+                    new UserResponseDto
+                    {
+                        Id = newUser.Id,
+                        Email = newUser.Email,
+                        Login = newUser.Login,
+                        CreatedAt = newUser.CreatedAt
+                    });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     [HttpPut("profile/{userId}")]

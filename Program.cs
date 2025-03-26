@@ -17,6 +17,17 @@ builder.Services.AddDbContext<UserDbContext>(options =>
         )
     )
 );
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("ReactAppPolicy",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:3000")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        });
+});
 
 var app = builder.Build();
 
@@ -24,7 +35,7 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
-
+app.UseCors("ReactAppPolicy");
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
 namespace Backend;
@@ -9,16 +10,18 @@ public class User
 
     [Required]
     [StringLength(50)]
-    public string Login { get; set; } = string.Empty;
+    [Column("Login")]
+    public string? Login { get; set; }
 
     [Required]
     [EmailAddress]
     [StringLength(100)]
-    public string Email { get; set; } = string.Empty;
+    [Column("Email")]
+    public string? Email { get; set; }
 
     [Required]
     [StringLength(100)]
-    public string PasswordHash { get; set; } = string.Empty;
+    public string? PasswordHash { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
