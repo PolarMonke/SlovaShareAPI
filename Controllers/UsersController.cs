@@ -135,6 +135,55 @@ public class UsersController : ControllerBase
             }
         });
     }
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(new {
+                    Message = "Invalid request",
+                    Errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                });
+            }
+
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Login == loginDto.Login);
+
+            if (user == null)
+            {
+                return Unauthorized(new { 
+                    Message = "Invalid credentials",
+                    Code = "INVALID_CREDENTIALS"
+                });
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            {
+                return Unauthorized(new { 
+                    Message = "Invalid credentials",
+                    Code = "INVALID_CREDENTIALS"
+                });
+            }
+
+            return Ok(new {
+                Id = user.Id,
+                Login = user.Login,
+                Email = user.Email,
+                CreatedAt = user.CreatedAt
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new {
+                Message = "An error occurred during login",
+                Error = ex.Message
+            });
+        }
+    }
 
     [HttpPut("profile/{userId}")]
     public async Task<IActionResult> UpdateProfile(int userId, [FromBody] ProfileUpdateDto profileDto)
