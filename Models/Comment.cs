@@ -3,19 +3,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend;
 
-public class StoryPart
+public class Comment
 {
+    [Required]
     public int Id { get; set; }
+
     [Required]
     public int StoryId { get; set; }
     [Required]
-    public int AuthorId { get; set; }
+    public int UserId { get; set; }
 
-    [StringLength(10000)]
-    public string Content { get; set; } = string.Empty;
-
+    [StringLength(1000)]
+    public string? Content { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public Story? Story { get; set; }
-    public User? Author { get; set; }
+    public User? User { get; set; }
 }
