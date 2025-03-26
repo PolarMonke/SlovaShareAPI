@@ -5,149 +5,176 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using BCrypt.Net;
+using System.ComponentModel.DataAnnotations;
 
-namespace Backend.Controllers
+[ApiController]
+[Route("[controller]")]
+public class UsersController : ControllerBase
 {
-    [ApiController]
-    [Route("[controller]")]
-    public class UsersController : ControllerBase
+    private readonly UserDbContext _context;
+
+    public UsersController(UserDbContext context)
     {
-        private readonly UserDbContext _context;
+        _context = context;
+    }
 
-        public UsersController(UserDbContext context)
-        {
-            _context = context;
-        }
-
-        // GET: /Users
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<User>>> GetUsers()
-        {
-            return await _context.Users.ToListAsync();
-        }
-
-        // GET: /Users/5
-        [HttpGet("{id}")]
-        public async Task<ActionResult<User>> GetUser(int id)
-        {
-            var user = await _context.Users.FindAsync(id);
-
-            if (user == null)
+    // GET: /Users
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<UserResponseDto>>> GetUsers()
+    {
+        return await _context.Users
+            .Select(u => new UserResponseDto
             {
-                return NotFound();
-            }
+                Id = u.Id,
+                Email = u.Email,
+                Login = u.Login,
+                CreatedAt = u.CreatedAt
+            })
+            .ToListAsync();
+    }
 
-            return Ok(user);
+    // GET: /Users/5
+    [HttpGet("{id}")]
+    public async Task<ActionResult<UserResponseDto>> GetUser(int id)
+    {
+        var user = await _context.Users.FindAsync(id);
+
+        if (user == null)
+        {
+            return NotFound();
         }
 
-        // рэгістрацыя
-        [HttpPost("register")]
-        public async Task<IActionResult> RegisterUser([FromBody] User authData)
+        return new UserResponseDto
         {
-            if (await _context.Users.AnyAsync(u => u.Email == authData.Email))
-            {
-                return BadRequest(new { Message = "Карыстальнік з такім імэйлам ужо існуе" });
-            }
+            Id = user.Id,
+            Email = user.Email,
+            Login = user.Login,
+            CreatedAt = user.CreatedAt
+        };
+    }
 
+    [HttpPost]
+    [HttpPost("register")]
+    public async Task<ActionResult<UserResponseDto>> CreateUser([FromBody] UserCreateDto userDto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        if (await _context.Users.AnyAsync(u => u.Email == userDto.Email))
+        {
+            return BadRequest(new { Message = "User with this email already exists" });
+        }
+
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {   
             var newUser = new User
             {
-                Email = authData.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(authData.PasswordHash)
+                Email = userDto.Email!,
+                Login = userDto.Login!,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password!),
+                CreatedAt = DateTime.UtcNow
             };
 
             _context.Users.Add(newUser);
             await _context.SaveChangesAsync();
 
-            var userProfile = new UserData
+            _context.UserData.Add(new UserData
             {
-                Id = newUser.Id,
-                Description = null,
-                ProfileImage = null
-            };
+                UserId = newUser.Id,
+                Description = string.Empty,
+                ProfileImage = string.Empty
+            });
 
-            _context.UserData.Add(userProfile);
+            _context.UserStatistics.Add(new UserStatistics
+            {
+                UserId = newUser.Id,
+                StoriesStarted = 0,
+                StoriesContributed = 0,
+                LikesReceived = 0,
+                CommentsReceived = 0
+            });
+
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
 
-            return Ok(new { Message = "Карыстальнік зарэгістраваны", UserId = newUser.Id });
-        }
-
-        // абнаўленне профілю
-        [HttpPut("profile/{userId}")]
-        public async Task<IActionResult> UpdateProfile(int userId, [FromBody] UserData updatedProfile)
-        {
-            var userProfile = await _context.UserData.FindAsync(userId);
-
-            if (userProfile == null)
-            {
-                return NotFound(new { Message = "Карыстальнік не знойдзены" });
-            }
-
-            userProfile.Description = updatedProfile.Description;
-            userProfile.ProfileImage = updatedProfile.ProfileImage;
-
-            _context.UserData.Update(userProfile);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { Message = "Профіль абноўлены", UserProfile = userProfile });
-        }
-        
-        // POST: /Users
-        [HttpPost]
-        public async Task<ActionResult<User>> CreateUser(User user)
-        {
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
-
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
-        }
-
-        // PUT: /Users/5
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateUser(int id, User user)
-        {
-            if (id != user.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(user).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!_context.Users.Any(u => u.Id == id))
+            return CreatedAtAction(nameof(GetUser), 
+                new { id = newUser.Id }, 
+                new UserResponseDto
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
+                    Id = newUser.Id,
+                    Email = newUser.Email,
+                    Login = newUser.Login,
+                    CreatedAt = newUser.CreatedAt
+                });
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
 
-            return NoContent();
+    [HttpPut("profile/{userId}")]
+    public async Task<IActionResult> UpdateProfile(int userId, [FromBody] ProfileUpdateDto profileDto)
+    {
+        var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
+        if (!userExists)
+        {
+            return NotFound(new { Message = "User not found" });
         }
 
-        // DELETE: /Users/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteUser(int id)
+        var userProfile = await _context.UserData.FirstOrDefaultAsync(ud => ud.UserId == userId);
+        if (userProfile == null)
+        {
+            return NotFound(new { Message = "Profile not found" });
+        }
+
+        userProfile.Description = profileDto.Description ?? userProfile.Description;
+        userProfile.ProfileImage = profileDto.ProfileImage ?? userProfile.ProfileImage;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = "Profile updated" });
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteUser(int id)
+    {
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
         {
             var user = await _context.Users.FindAsync(id);
-
             if (user == null)
             {
                 return NotFound();
             }
 
+            // Delete related data first
+            var profile = await _context.UserData.FirstOrDefaultAsync(p => p.UserId == id);
+            if (profile != null)
+            {
+                _context.UserData.Remove(profile);
+            }
+
+            var stats = await _context.UserStatistics.FirstOrDefaultAsync(s => s.UserId == id);
+            if (stats != null)
+            {
+                _context.UserStatistics.Remove(stats);
+            }
+
             _context.Users.Remove(user);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return NoContent();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
         }
     }
 }

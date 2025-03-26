@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Backend;
 
@@ -15,6 +16,7 @@ public class UserData
     public string ProfileImage { get; set; } = string.Empty;
 
     public int UserId { get; set; }
-
+    
+    [JsonIgnore]
     public User? User { get; set; }
 }

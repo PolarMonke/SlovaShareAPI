@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Backend;
 
@@ -21,6 +22,8 @@ public class User
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    [JsonIgnore]
     public UserData? UserData { get; set; }
+    [JsonIgnore]
     public UserStatistics? UserStatistics { get; set; }
 }
