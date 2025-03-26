@@ -207,6 +207,50 @@ public class UsersController : ControllerBase
 
         return Ok(new { Message = "Profile updated" });
     }
+    [HttpGet("{id}/profile")]
+    public async Task<IActionResult> GetProfile(int id)
+    {
+        var user = await _context.Users
+            .Include(u => u.UserData)
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user == null) return NotFound();
+
+        return Ok(new {
+            login = user.Login,
+            email = user.Email,
+            description = user.UserData?.Description,
+            profileImage = user.UserData?.ProfileImage
+        });
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateUser(int id, [FromBody] UserUpdateDto userDto)
+    {
+        var user = await _context.Users
+            .Include(u => u.UserData)
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user == null) return NotFound();
+
+        user.Login = userDto.Login ?? user.Login;
+        user.Email = userDto.Email ?? user.Email;
+        
+        if (user.UserData != null)
+        {
+            user.UserData.Description = userDto.Description ?? user.UserData.Description;
+            user.UserData.ProfileImage = userDto.ProfileImage ?? user.UserData.ProfileImage;
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new {
+            login = user.Login,
+            email = user.Email,
+            description = user.UserData?.Description,
+            profileImage = user.UserData?.ProfileImage
+        });
+    }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteUser(int id)
@@ -220,7 +264,6 @@ public class UsersController : ControllerBase
                 return NotFound();
             }
 
-            // Delete related data first
             var profile = await _context.UserData.FirstOrDefaultAsync(p => p.UserId == id);
             if (profile != null)
             {
