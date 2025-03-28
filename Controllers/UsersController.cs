@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Backend;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using BCrypt.Net;
-using System.ComponentModel.DataAnnotations;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.Authorization;
 
 [ApiController]
 [Route("[controller]")]
@@ -138,51 +139,38 @@ public class UsersController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
     {
-        try
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Login == loginDto.Login);
+        
+        if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            return Unauthorized("Invalid credentials");
+
+        // Generate JWT token
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.ASCII.GetBytes("your-32-character-secret-key-here");
+        var tokenDescriptor = new SecurityTokenDescriptor
         {
-            if (!ModelState.IsValid)
+            Subject = new ClaimsIdentity(new[]
             {
-                return BadRequest(new {
-                    Message = "Invalid request",
-                    Errors = ModelState.Values
-                        .SelectMany(v => v.Errors)
-                        .Select(e => e.ErrorMessage)
-                });
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Name, user.Login)
+            }),
+            Expires = DateTime.UtcNow.AddDays(7),
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(key), 
+                SecurityAlgorithms.HmacSha256Signature)
+        };
+        
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        var tokenString = tokenHandler.WriteToken(token);
+
+        return Ok(new {
+            token = tokenString,
+            user = new {
+                id = user.Id,
+                login = user.Login,
+                email = user.Email
             }
-
-            var user = await _context.Users
-                .FirstOrDefaultAsync(u => u.Login == loginDto.Login);
-
-            if (user == null)
-            {
-                return Unauthorized(new { 
-                    Message = "Invalid credentials",
-                    Code = "INVALID_CREDENTIALS"
-                });
-            }
-
-            if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
-            {
-                return Unauthorized(new { 
-                    Message = "Invalid credentials",
-                    Code = "INVALID_CREDENTIALS"
-                });
-            }
-
-            return Ok(new {
-                Id = user.Id,
-                Login = user.Login,
-                Email = user.Email,
-                CreatedAt = user.CreatedAt
-            });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new {
-                Message = "An error occurred during login",
-                Error = ex.Message
-            });
-        }
+        });
     }
 
     [HttpPut("profile/{userId}")]
@@ -208,8 +196,16 @@ public class UsersController : ControllerBase
         return Ok(new { Message = "Profile updated" });
     }
     [HttpGet("{id}/profile")]
+    [Authorize]
     public async Task<IActionResult> GetProfile(int id)
     {
+        var currentUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+        
+        if (id != currentUserId)
+        {
+            return Forbid(); 
+        }
+
         var user = await _context.Users
             .Include(u => u.UserData)
             .FirstOrDefaultAsync(u => u.Id == id);

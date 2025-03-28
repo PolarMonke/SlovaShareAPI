@@ -1,6 +1,9 @@
 using Backend;
 using Microsoft.EntityFrameworkCore;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,6 +32,20 @@ builder.Services.AddCors(options =>
         });
 });
 
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.ASCII.GetBytes("your-32-character-secret-key-here")),
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true
+        };
+    });
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -39,5 +56,7 @@ app.UseCors("ReactAppPolicy");
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.Run();
