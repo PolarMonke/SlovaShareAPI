@@ -7,6 +7,7 @@ using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 
 [ApiController]
 [Route("[controller]")]
@@ -139,12 +140,13 @@ public class UsersController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Login == loginDto.Login);
+        var user = await _context.Users
+            .Include(u => u.UserData)
+            .FirstOrDefaultAsync(u => u.Login == loginDto.Login);
         
         if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
             return Unauthorized("Invalid credentials");
 
-        // Generate JWT token
         var tokenHandler = new JwtSecurityTokenHandler();
         var key = Encoding.ASCII.GetBytes("your-32-character-secret-key-here");
         var tokenDescriptor = new SecurityTokenDescriptor
@@ -168,8 +170,29 @@ public class UsersController : ControllerBase
             user = new {
                 id = user.Id,
                 login = user.Login,
-                email = user.Email
+                email = user.Email,
+                description = user.UserData?.Description,
+                profileImage = user.UserData?.ProfileImage
             }
+        });
+    }
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> GetCurrentUser()
+    {
+        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+        var user = await _context.Users
+            .Include(u => u.UserData)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null) return NotFound();
+
+        return Ok(new {
+            id = user.Id,
+            login = user.Login,
+            email = user.Email,
+            description = user.UserData?.Description,
+            profileImage = user.UserData?.ProfileImage
         });
     }
 

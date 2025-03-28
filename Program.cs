@@ -20,16 +20,15 @@ builder.Services.AddDbContext<UserDbContext>(options =>
         )
     )
 );
-builder.Services.AddCors(options =>
+builder.Services.AddCors(options => 
 {
-    options.AddPolicy("ReactAppPolicy",
-        policy =>
-        {
-            policy.WithOrigins("http://localhost:3000")
-                  .AllowAnyHeader()
-                  .AllowAnyMethod()
-                  .AllowCredentials();
-        });
+    options.AddPolicy("ReactApp", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
 });
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -52,11 +51,17 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
-app.UseCors("ReactAppPolicy");
+else
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseRouting();
+app.UseCors("ReactApp");
 app.UseHttpsRedirection();
-app.UseAuthorization();
-app.MapControllers();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapControllers();
+
 
 app.Run();
