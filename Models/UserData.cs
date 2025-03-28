@@ -12,7 +12,7 @@ public class UserData
     public string Description { get; set; } = string.Empty;
 
     [Required]
-    [StringLength(100)]
+    [StringLength(1000)]
     public string ProfileImage { get; set; } = string.Empty;
 
     public int UserId { get; set; }
