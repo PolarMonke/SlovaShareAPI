@@ -17,4 +17,5 @@ public class StoryPartResponseDto
     public int Order { get; set; }
     public UserResponseDto? Author { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 }
