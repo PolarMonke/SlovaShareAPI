@@ -64,7 +64,7 @@ public class UsersController : ControllerBase
         {
             return BadRequest(ModelState);
         }
-        if (string.IsNullOrEmpty(userDto.Login)) 
+        if (string.IsNullOrEmpty(userDto?.Login)) 
         {
             return BadRequest("Login is empty in DTO");
         }
@@ -223,23 +223,22 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> GetProfile(int id)
     {
         var currentUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-        
-        if (id != currentUserId)
-        {
-            return Forbid(); 
-        }
-
         var user = await _context.Users
             .Include(u => u.UserData)
+            .Include(u => u.UserStatistics)
             .FirstOrDefaultAsync(u => u.Id == id);
 
         if (user == null) return NotFound();
 
         return Ok(new {
+            id = user.Id,
             login = user.Login,
-            email = user.Email,
             description = user.UserData?.Description,
-            profileImage = user.UserData?.ProfileImage
+            profileImage = user.UserData?.ProfileImage,
+            storiesStarted = user.UserStatistics?.StoriesStarted ?? 0,
+            storiesContributed = user.UserStatistics?.StoriesContributed ?? 0,
+            likesReceived = user.UserStatistics?.LikesReceived ?? 0,
+            isCurrentUser = currentUserId == id
         });
     }
 

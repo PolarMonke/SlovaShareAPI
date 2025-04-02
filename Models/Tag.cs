@@ -6,6 +6,10 @@ namespace Backend;
 public class Tag
 {
     public int Id { get; set; }
+    
+    [Required]
     [StringLength(1000)]
     public string? Name { get; set; }
+
+    public ICollection<StoryTag> StoryTags { get; set; } = new List<StoryTag>();
 }

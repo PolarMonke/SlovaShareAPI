@@ -7,10 +7,10 @@ public class StoryTag
 {
     [Required]
     public int StoryId { get; set; }
-
+    
     [Required]
     public int TagId { get; set; }
-
+    
     public Story? Story { get; set; }
     public Tag? Tag { get; set; }
 }
