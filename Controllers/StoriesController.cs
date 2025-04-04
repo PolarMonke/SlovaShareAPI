@@ -25,6 +25,7 @@ public class StoriesController : ControllerBase
     #region Stories
     //stories/
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<StoryResponseDto>>> GetStories()
     {
         return await _context.Stories
@@ -56,6 +57,7 @@ public class StoriesController : ControllerBase
 
     // stories/{id}
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<ActionResult<StoryResponseDto>> GetStory(int id)
     {
         var story = await _context.Stories
@@ -134,6 +136,7 @@ public class StoriesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize]
     public async Task<ActionResult<StoryResponseDto>> CreateStory(StoryCreateDto storyDto)
     {
         var userId = GetUserId();
@@ -184,6 +187,7 @@ public class StoriesController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [Authorize]
     public async Task<IActionResult> UpdateStory(int id, StoryUpdateDto storyDto)
     {
         var story = await _context.Stories
@@ -254,6 +258,7 @@ public class StoriesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize]
     public async Task<IActionResult> DeleteStory(int id)
     {
         var userId = GetUserId();
@@ -692,9 +697,134 @@ public class StoriesController : ControllerBase
 
     #endregion
 
-    #region Other
+    #region User specific
 
-    
+    [HttpGet("user/{userId}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IEnumerable<StoryResponseDto>>> GetUserStories(int userId)
+    {
+        var userExists = await _userContext.Users.AnyAsync(u => u.Id == userId);
+        if (!userExists)
+        {
+            return NotFound(new { Message = "User not found" });
+        }
+
+        var currentUserId = User.Identity?.IsAuthenticated == true ? GetUserId() : -1;
+        var isOwner = currentUserId == userId;
+
+        var stories = await _context.Stories
+            .Where(s => s.OwnerId == userId && (s.IsPublic || isOwner))
+            .Include(s => s.StoryTags)
+                .ThenInclude(st => st.Tag)
+            .OrderByDescending(s => s.CreatedAt)
+            .Select(s => new StoryResponseDto
+            {
+                Id = s.Id,
+                Title = s.Title,
+                Description = s.Description,
+                IsPublic = s.IsPublic,
+                CoverImageUrl = s.CoverImageUrl,
+                Tags = s.StoryTags.Select(st => st.Tag.Name).ToList(),
+                PartsCount = s.Parts.Count,
+                LikeCount = s.Likes.Count,
+                CommentCount = s.Comments.Count,
+                CreatedAt = s.CreatedAt,
+                UpdatedAt = s.UpdatedAt,
+                Owner = new UserResponseDto
+                {
+                    Id = userId,
+                    Login = s.Owner.Login
+                }
+            })
+            .ToListAsync();
+
+        return Ok(stories);
+    }
+    [HttpGet("user/{userId}/contributions")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IEnumerable<StoryResponseDto>>> GetUserContributions(int userId)
+    {
+        var userExists = await _userContext.Users.AnyAsync(u => u.Id == userId);
+        if (!userExists)
+        {
+            return NotFound(new { Message = "User not found" });
+        }
+
+        var currentUserId = User.Identity?.IsAuthenticated == true ? GetUserId() : -1;
+
+        var contributedStories = await _context.StoryParts
+            .Where(p => p.AuthorId == userId)
+            .Select(p => p.Story)
+            .Where(s => s.IsPublic || s.OwnerId == currentUserId)
+            .Distinct()
+            .Include(s => s.StoryTags)
+                .ThenInclude(st => st.Tag)
+            .OrderByDescending(s => s.CreatedAt)
+            .Select(s => new StoryResponseDto
+            {
+                Id = s.Id,
+                Title = s.Title,
+                Description = s.Description,
+                IsPublic = s.IsPublic,
+                CoverImageUrl = s.CoverImageUrl,
+                Tags = s.StoryTags.Select(st => st.Tag.Name).ToList(),
+                PartsCount = s.Parts.Count,
+                LikeCount = s.Likes.Count,
+                CommentCount = s.Comments.Count,
+                CreatedAt = s.CreatedAt,
+                UpdatedAt = s.UpdatedAt,
+                Owner = new UserResponseDto
+                {
+                    Id = s.OwnerId,
+                    Login = s.Owner.Login
+                }
+            })
+            .ToListAsync();
+
+        return Ok(contributedStories);
+    }
+
+    #endregion
+
+    #region Reports
+
+    [HttpPost("{id}/report")]
+    public async Task<IActionResult> ReportStory(int id, ReportCreateDto reportDto)
+    {
+        var userId = GetUserId();
+
+        var story = await _context.Stories.FindAsync(id);
+        if (story == null)
+        {
+            return NotFound(new { Message = "Story not found" });
+        }
+
+        var existingReport = await _context.Reports
+            .FirstOrDefaultAsync(r => r.StoryId == id && r.UserId == userId);
+
+        if (existingReport != null)
+        {
+            return BadRequest(new { Message = "You have already reported this story" });
+        }
+
+        var report = new Report
+        {
+            StoryId = id,
+            UserId = userId,
+            Reason = reportDto.Reason?.Trim(),
+            Content = reportDto.Details?.Trim(),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Reports.Add(report);
+        await _context.SaveChangesAsync();
+
+        // Notify moderator
+        // Use some tg bot
+        // Block or ignore through this bot
+
+        return Ok(new { Message = "Story reported successfully" });
+    }
 
     #endregion
 

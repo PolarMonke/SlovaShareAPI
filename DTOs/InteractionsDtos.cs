@@ -20,3 +20,12 @@ public class LikeResponseDto
     public UserResponseDto? User { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+public class ReportCreateDto
+{
+    [Required, MaxLength(100)]
+    public string? Reason { get; set; }
+    
+    [MaxLength(1000)]
+    public string? Details { get; set; }
+}
