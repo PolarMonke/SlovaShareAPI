@@ -300,7 +300,168 @@ public class StoriesController : ControllerBase
 
     #endregion
 
+    #region Story parts
 
+    [HttpPost("{storyId}/parts")]
+    public async Task<ActionResult<StoryPartResponseDto>> AddPart(int storyId, StoryPartCreateDto partDto)
+    {
+        var userId = GetUserId();
+
+        var story = await _context.Stories
+        .Include(s => s.Parts)
+        .FirstOrDefaultAsync(s => s.Id == storyId);
+        if (story == null)
+        {
+            return NotFound(new { Message = "Story not found" });
+        }
+        if (!story.IsEditable)
+        {
+            return BadRequest(new { Message = "This story is not currently editable" });
+        }
+
+        var nextOrder = story.Parts.Any() ? story.Parts.Max(p => p.Order) + 1 : 1;
+
+        var newPart = new StoryPart
+        {
+            Content = partDto.Content?.Trim() ?? throw new ArgumentNullException(nameof(partDto.Content)),
+            Order = nextOrder,
+            AuthorId = userId,
+            StoryId = storyId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+         _context.StoryParts.Add(newPart);
+        story.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(
+        nameof(GetStory), 
+        new { id = storyId }, 
+        new StoryPartResponseDto
+        {
+            Id = newPart.Id,
+            Content = newPart.Content,
+            Order = newPart.Order,
+            CreatedAt = newPart.CreatedAt,
+            UpdatedAt = newPart.UpdatedAt,
+            Author = new UserResponseDto
+            {
+                Id = userId,
+                Login = User.Identity?.Name ?? string.Empty
+            }
+        });
+
+    }
+    [HttpPut("{storyId}/parts/{partId}")]
+    [Authorize]
+    public async Task<IActionResult> UpdatePart(int storyId, int partId, StoryPartUpdateDto partDto)
+    {
+        var userId = GetUserId();
+        
+        var part = await _context.StoryParts
+            .Include(p => p.Story)
+            .Include(p => p.Author)
+            .FirstOrDefaultAsync(p => p.Id == partId && p.StoryId == storyId);
+
+        if (part == null)
+        {
+            return NotFound(new { Message = "Part not found" });
+        }
+
+        if (part.AuthorId != userId && part.Story.OwnerId != userId)
+        {
+            return Forbid();
+        }
+
+        part.Content = partDto.Content?.Trim() ?? throw new ArgumentNullException(nameof(partDto.Content));
+        part.UpdatedAt = DateTime.UtcNow;
+        part.Story.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+    [HttpDelete("{storyId}/parts/{partId}")]
+    public async Task<IActionResult> DeletePart(int storyId, int partId)
+    {
+        var userId = GetUserId();
+
+        var part = await _context.StoryParts
+            .Include(p => p.Story)
+            .Include(p => p.Author)
+            .FirstOrDefaultAsync(p => p.Id == partId && p.StoryId == storyId);
+
+        if (part == null)
+        {
+            return NotFound(new { Message = "Part not found" });
+        }
+
+        if (part.AuthorId != userId && part.Story.OwnerId != userId)
+        {
+            return Forbid();
+        }
+
+        var subsequentParts = await _context.StoryParts
+            .Where(p => p.StoryId == storyId && p.Order > part.Order)
+            .ToListAsync();
+
+        foreach (var subsequentPart in subsequentParts)
+        {
+            subsequentPart.Order--;
+        }
+
+        _context.StoryParts.Remove(part);
+        part.Story.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+    [HttpPut("{storyId}/parts/order")]
+    public async Task<IActionResult> ReorderParts(int storyId, int[] partIdsInOrder)
+    {
+        var userId = GetUserId();
+
+        var story = await _context.Stories.FindAsync(storyId);
+        if (story == null)
+        {
+            return NotFound(new { Message = "Story not found" });
+        }
+
+        if (story.OwnerId != userId)
+        {
+            return Forbid();
+        }
+
+        var parts = await _context.StoryParts
+            .Where(p => p.StoryId == storyId)
+            .ToListAsync();
+
+        var invalidParts = partIdsInOrder.Except(parts.Select(p => p.Id)).ToList();
+        if (invalidParts.Any())
+        {
+            return BadRequest(new { Message = $"Invalid part IDs: {string.Join(",", invalidParts)}" });
+        }
+
+        if (parts.Count != partIdsInOrder.Length)
+        {
+            return BadRequest(new { Message = "Part count mismatch" });
+        }
+
+        for (int i = 0; i < partIdsInOrder.Length; i++)
+        {
+            var part = parts.First(p => p.Id == partIdsInOrder[i]);
+            part.Order = i + 1;
+        }
+
+        story.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    #endregion
 
     #region Helping methods
     private int GetUserId()
