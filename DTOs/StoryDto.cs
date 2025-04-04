@@ -10,7 +10,7 @@ public class StoryCreateDto
     
     public bool IsPublic { get; set; } = true;
     public string? CoverImageUrl { get; set; }
-    public string[] Tags { get; set; } = Array.Empty<string>();
+    public string[] StoryTags { get; set; } = Array.Empty<string>();
     public string? InitialContent { get; set; }
 }
 public class StoryUpdateDto

@@ -36,6 +36,7 @@ public class Story
     public ICollection<StoryTag> StoryTags { get; set; } = new List<StoryTag>();
     public ICollection<Like> Likes { get; set; } = new List<Like>();
     public ICollection<Comment> Comments { get; set; } = new List<Comment>();
+    public ICollection<Report> Reports { get; set; } = new List<Report>();
 
     public void UpdateTimestamps()
     {
