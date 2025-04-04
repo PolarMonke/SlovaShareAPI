@@ -463,6 +463,148 @@ public class StoriesController : ControllerBase
 
     #endregion
 
+    #region Social features
+
+    [HttpPost("{id}/like")]
+    [Authorize]
+    public async Task<IActionResult> ToggleLike(int id)
+    {
+        var userId = GetUserId();
+
+        var story = await _context.Stories.FindAsync(id);
+        if (story == null)
+        {
+            return NotFound(new { Message = "Story not found" });
+        }
+
+        var like = await _context.Likes.FirstOrDefaultAsync(l => l.StoryId == id && l.UserId == userId);
+        
+        if (like != null)
+        {
+            _context.Likes.Remove(like);
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Like removed", Liked = false });
+        }
+        else
+        {
+            var newLike = new Like
+            {
+                StoryId = id,
+                UserId = userId,
+                CreatedAt = DateTime.UtcNow
+            };
+            
+            _context.Likes.Add(newLike);
+            await _context.SaveChangesAsync();
+            return Ok(new { Message = "Story liked", Liked = true });
+        }
+    }
+
+    [HttpPost("{id}/comments")]
+    [Authorize]
+    public async Task<ActionResult<CommentResponseDto>> AddComment(int id, CommentCreateDto commentDto)
+    {
+        var userId = GetUserId();
+
+        var story = await _context.Stories.FindAsync(id);
+        if (story == null)
+        {
+            return NotFound(new { Message = "Story not found" });
+        }
+        var comment = new Comment
+        {
+            Content = commentDto.Content?.Trim() ?? throw new ArgumentNullException(nameof(commentDto.Content)),
+            StoryId = id,
+            UserId = userId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Comments.Add(comment);
+        story.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var author = await _userContext.Users.FindAsync(userId);
+
+        return CreatedAtAction(
+            nameof(GetStory), 
+            new { id }, 
+            new CommentResponseDto
+            {
+                Id = comment.Id,
+                Content = comment.Content,
+                CreatedAt = comment.CreatedAt,
+                Author = new UserResponseDto
+                {
+                    Id = userId,
+                    Login = author?.Login ?? string.Empty,
+                    Email = author?.Email ?? string.Empty,
+                    CreatedAt = author?.CreatedAt ?? DateTime.MinValue
+                }
+            });
+
+    }
+
+    [HttpGet("{id}/comments")]
+    public async Task<ActionResult<IEnumerable<CommentResponseDto>>> GetComments(int id)
+    {
+        var storyExists = await _context.Stories.AnyAsync(s => s.Id == id);
+        if (!storyExists)
+        {
+            return NotFound(new { Message = "Story not found" });
+        }
+
+        var comments = await _context.Comments
+            .Where(c => c.StoryId == id)
+            .OrderByDescending(c => c.CreatedAt)
+            .Include(c => c.User)
+            .Select(c => new CommentResponseDto
+            {
+                Id = c.Id,
+                Content = c.Content,
+                CreatedAt = c.CreatedAt,
+                Author = new UserResponseDto
+                {
+                    Id = c.User.Id,
+                    Login = c.User.Login,
+                    Email = c.User.Email,
+                    CreatedAt = c.User.CreatedAt
+                }
+            })
+            .ToListAsync();
+
+        return Ok(comments);
+    }
+
+    [HttpDelete("{id}/comments/{commentId}")]
+    [Authorize]
+    public async Task<IActionResult> DeleteComment(int id, int commentId)
+    {
+        var userId = GetUserId();
+
+        var comment = await _context.Comments
+            .Include(c => c.User)
+            .Include(c => c.Story)
+            .FirstOrDefaultAsync(c => c.Id == commentId && c.StoryId == id);
+
+        if (comment == null)
+        {
+            return NotFound(new { Message = "Comment not found" });
+        }
+
+        if (comment.UserId != userId && comment.Story.OwnerId != userId)
+        {
+            return Forbid();
+        }
+
+        _context.Comments.Remove(comment);
+        comment.Story.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    #endregion
+
     #region Helping methods
     private int GetUserId()
     {
