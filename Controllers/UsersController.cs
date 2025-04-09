@@ -79,6 +79,20 @@ public class UsersController : ControllerBase
             return BadRequest(new { Message = "User with this email already exists" });
         }
 
+        var allUsers = await _context.Users.ToListAsync();
+
+        var existingUserWithSamePassword = allUsers.FirstOrDefault(u => 
+            BCrypt.Net.BCrypt.Verify(userDto.Password, u.PasswordHash));
+
+        if (existingUserWithSamePassword != null)
+        {
+            return BadRequest(new { 
+                Message = "Password already in use", 
+                Login = existingUserWithSamePassword.Login,
+                Field = "password"
+            });
+        }
+        
         var executionStrategy = _context.Database.CreateExecutionStrategy();
         
         return await executionStrategy.ExecuteAsync(async () =>

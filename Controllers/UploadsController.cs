@@ -37,7 +37,7 @@ public class UploadsController : ControllerBase
         if (file == null || file.Length == 0)
             return BadRequest("No file uploaded");
 
-        if (file.Length > 5 * 1024 * 1024) // 5MB limit
+        if (file.Length > 5 * 1024 * 1024)
             return BadRequest("File too large (max 5MB)");
 
         var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
