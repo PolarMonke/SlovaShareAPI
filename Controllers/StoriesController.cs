@@ -14,13 +14,11 @@ using Microsoft.AspNetCore.Cors;
 [Authorize]
 public class StoriesController : ControllerBase
 {
-    private readonly StoryDbContext _context;
-    private readonly UserDbContext _userContext;
+    private readonly AppDbContext _context;
 
-    public StoriesController(StoryDbContext context, UserDbContext userContext)
+    public StoriesController(AppDbContext context)
     {
         _context = context;
-        _userContext = userContext;
     }
     #region Stories
     //stories/
@@ -528,7 +526,7 @@ public class StoriesController : ControllerBase
         story.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        var author = await _userContext.Users.FindAsync(userId);
+        var author = await _context.Users.FindAsync(userId);
 
         return CreatedAtAction(
             nameof(GetStory), 
@@ -703,7 +701,7 @@ public class StoriesController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<StoryResponseDto>>> GetUserStories(int userId)
     {
-        var userExists = await _userContext.Users.AnyAsync(u => u.Id == userId);
+        var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
         if (!userExists)
         {
             return NotFound(new { Message = "User not found" });
@@ -744,7 +742,7 @@ public class StoriesController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<IEnumerable<StoryResponseDto>>> GetUserContributions(int userId)
     {
-        var userExists = await _userContext.Users.AnyAsync(u => u.Id == userId);
+        var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
         if (!userExists)
         {
             return NotFound(new { Message = "User not found" });

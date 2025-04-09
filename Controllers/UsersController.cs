@@ -13,9 +13,9 @@ using Microsoft.AspNetCore.Cors;
 [Route("[controller]")]
 public class UsersController : ControllerBase
 {
-    private readonly UserDbContext _context;
+    private readonly AppDbContext _context;
 
-    public UsersController(UserDbContext context)
+    public UsersController(AppDbContext context)
     {
         _context = context;
     }

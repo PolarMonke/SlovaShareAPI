@@ -8,7 +8,7 @@ public class Tag
     public int Id { get; set; }
     
     [Required]
-    [StringLength(1000)]
+    [StringLength(255)]
     public string? Name { get; set; }
 
     public ICollection<StoryTag> StoryTags { get; set; } = new List<StoryTag>();

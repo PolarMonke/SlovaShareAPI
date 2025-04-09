@@ -9,7 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-builder.Services.AddDbContext<UserDbContext>(options =>
+builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         new MySqlServerVersion(new Version(8, 0, 21)),
@@ -20,6 +20,7 @@ builder.Services.AddDbContext<UserDbContext>(options =>
         )
     )
 );
+
 builder.Services.AddCors(options => 
 {
     options.AddPolicy("ReactApp", policy =>
