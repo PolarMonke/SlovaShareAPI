@@ -32,7 +32,7 @@ public class StoryResponseDto
     public string? Title { get; set; }
     public string? Description { get; set; }
     
-    // Owner information (using your existing UserResponseDto)
+    // Owner information
     public UserResponseDto? Owner { get; set; }
     
     // Collaboration metrics

@@ -138,6 +138,13 @@ public class StoriesController : ControllerBase
     public async Task<ActionResult<StoryResponseDto>> CreateStory(StoryCreateDto storyDto)
     {
         var userId = GetUserId();
+
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null)
+        {
+            return Unauthorized("User not found");
+        }
+
         var story = new Story
         {
             Title = storyDto.Title?.Trim() ?? throw new ArgumentNullException(nameof(storyDto.Title)),
@@ -145,6 +152,7 @@ public class StoriesController : ControllerBase
             IsPublic = storyDto.IsPublic,
             CoverImageUrl = storyDto.CoverImageUrl?.Trim(),
             OwnerId = userId,
+            Owner = user,  // Set the owner explicitly
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -199,15 +207,9 @@ public class StoriesController : ControllerBase
                 Owner = new UserResponseDto
                 {
                     Id = userId,
-                    Login = User.Identity?.Name ?? string.Empty,
-                    Email = await _context.Users
-                        .Where(u => u.Id == userId)
-                        .Select(u => u.Email)
-                        .FirstOrDefaultAsync() ?? string.Empty,
-                    CreatedAt = await _context.Users
-                        .Where(u => u.Id == userId)
-                        .Select(u => u.CreatedAt)
-                        .FirstOrDefaultAsync()
+                    Login = user.Login ?? string.Empty,
+                    Email = user.Email ?? string.Empty,
+                    CreatedAt = user.CreatedAt
                 },
                 Tags = story.StoryTags?.Select(st => st.Tag?.Name ?? string.Empty).ToList() ?? new List<string>(),
                 PartsCount = story.Parts?.Count ?? 0,
@@ -872,7 +874,7 @@ public class StoriesController : ControllerBase
         {
             throw new UnauthorizedAccessException("Invalid user ID format");
         }
-
+        System.Console.WriteLine(userId);
         return userId;
     }
     #endregion
