@@ -148,6 +148,7 @@ public class StoriesController : ControllerBase
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
+
         if (storyDto.StoryTags != null && storyDto.StoryTags.Length > 0)
         {
             story.StoryTags = new List<StoryTag>();
@@ -165,6 +166,7 @@ public class StoriesController : ControllerBase
                 story.StoryTags.Add(new StoryTag { Tag = tag });
             }
         }
+
         if (!string.IsNullOrWhiteSpace(storyDto.InitialContent))
         {
             story.Parts = new List<StoryPart>
@@ -178,10 +180,40 @@ public class StoriesController : ControllerBase
                 }
             };
         }
+
         _context.Stories.Add(story);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetStory), new { id = story.Id });
+        return CreatedAtAction(
+            actionName: nameof(GetStory), 
+            controllerName: null,
+            routeValues: new { id = story.Id },
+            value: new StoryResponseDto
+            {
+                Id = story.Id,
+                Title = story.Title,
+                Description = story.Description,
+                IsPublic = story.IsPublic,
+                CoverImageUrl = story.CoverImageUrl,
+                CreatedAt = story.CreatedAt,
+                Owner = new UserResponseDto
+                {
+                    Id = userId,
+                    Login = User.Identity?.Name ?? string.Empty,
+                    Email = await _context.Users
+                        .Where(u => u.Id == userId)
+                        .Select(u => u.Email)
+                        .FirstOrDefaultAsync() ?? string.Empty,
+                    CreatedAt = await _context.Users
+                        .Where(u => u.Id == userId)
+                        .Select(u => u.CreatedAt)
+                        .FirstOrDefaultAsync()
+                },
+                Tags = story.StoryTags?.Select(st => st.Tag?.Name ?? string.Empty).ToList() ?? new List<string>(),
+                PartsCount = story.Parts?.Count ?? 0,
+                LikeCount = 0,
+                CommentCount = 0
+            });
     }
 
     [HttpPut("{id}")]

@@ -1,14 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Backend;
-using BCrypt.Net;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
+using System.IO;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Cors;
-
+using System;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace Backend;
 
@@ -34,21 +34,66 @@ public class UploadsController : ControllerBase
     [HttpPost("profile-image")]
     public async Task<IActionResult> UploadProfileImage(IFormFile file)
     {
+        try
+        {
+            var result = await UploadFile(file, "profile-images");
+            if (!result.Success)
+                return BadRequest(result.Error);
+
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var user = await _context.Users
+                .Include(u => u.UserData)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user?.UserData != null)
+            {
+                user.UserData.ProfileImage = result.Url;
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok(new { url = result.Url });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpPost("story-cover")]
+    public async Task<IActionResult> UploadStoryCover(IFormFile file)
+    {
+        try
+        {
+            var result = await UploadFile(file, "story-covers");
+            if (!result.Success)
+                return BadRequest(new { error = result.Error });
+
+            return Ok(new { url = result.Url });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"Internal server error: {ex.Message}" });
+        }
+    }
+
+    private async Task<(bool Success, string Url, string Error)> UploadFile(IFormFile file, string subfolder)
+    {
         if (file == null || file.Length == 0)
-            return BadRequest("No file uploaded");
+            return (false, null, "No file uploaded");
 
         if (file.Length > 5 * 1024 * 1024)
-            return BadRequest("File too large (max 5MB)");
+            return (false, null, "File too large (max 5MB)");
 
-        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif" };
+        var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (string.IsNullOrEmpty(extension) || !allowedExtensions.Contains(extension))
-            return BadRequest("Invalid file type");
+            return (false, null, "Invalid file type. Only images are allowed");
 
         var fileName = $"{Guid.NewGuid()}{extension}";
-        var uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads", "profile-images");
+        var uploadsFolder = Path.Combine(_environment.WebRootPath, "uploads", subfolder);
 
-        Directory.CreateDirectory(uploadsFolder);
+        if (!Directory.Exists(uploadsFolder))
+            Directory.CreateDirectory(uploadsFolder);
 
         var filePath = Path.Combine(uploadsFolder, fileName);
 
@@ -58,19 +103,8 @@ public class UploadsController : ControllerBase
         }
 
         var baseUrl = _configuration["BaseUrl"] ?? $"{Request.Scheme}://{Request.Host}";
-        var imageUrl = $"{baseUrl}/uploads/profile-images/{fileName}";
+        var fileUrl = $"{baseUrl}/uploads/{subfolder}/{fileName}";
 
-        var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
-        var user = await _context.Users
-            .Include(u => u.UserData)
-            .FirstOrDefaultAsync(u => u.Id == userId);
-
-        if (user?.UserData != null)
-        {
-            user.UserData.ProfileImage = imageUrl;
-            await _context.SaveChangesAsync();
-        }
-
-        return Ok(new { url = imageUrl });
+        return (true, fileUrl, null);
     }
 }
