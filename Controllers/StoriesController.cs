@@ -30,6 +30,7 @@ public class StoriesController : ControllerBase
         .Include(s => s.Owner)
         .Include(s => s.StoryTags)
         .ThenInclude(st => st.Tag)
+        .OrderByDescending(s => s.CreatedAt)
         .Select(s => new StoryResponseDto
         {
             Id = s.Id,
@@ -61,22 +62,24 @@ public class StoriesController : ControllerBase
         var story = await _context.Stories
             .Include(s => s.Owner)
             .Include(s => s.Parts.OrderBy(p => p.Order))
-                .ThenInclude(p => p.Author)
+            .ThenInclude(p => p.Author)
             .Include(s => s.StoryTags)
-                .ThenInclude(st => st.Tag)
-            .Include(s => s.Likes)
-            .Include(s => s.Comments)
+            .ThenInclude(st => st.Tag)
             .FirstOrDefaultAsync(s => s.Id == id);
 
-        if (story == null)
-        {
-            return NotFound();
-        }
+        if (story == null) return NotFound(new { Message = "Story not found" });
 
-        var userId = GetUserId();
-        if (!story.IsPublic && story.OwnerId != userId)
+        if (!story.IsPublic)
         {
-            return Forbid();
+            try 
+            {
+                var userId = GetUserId();
+                if (story.OwnerId != userId) return Forbid();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Unauthorized(new { Message = "Authentication required for private stories" });
+            }
         }
 
         return new StoryResponseDto
