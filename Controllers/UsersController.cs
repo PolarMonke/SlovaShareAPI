@@ -234,9 +234,10 @@ public class UsersController : ControllerBase
     }
     [HttpGet("{id}/profile")]
     [Authorize]
-    public async Task<IActionResult> GetProfile(int id)
+    public async Task<ActionResult<UserProfileDto>> GetProfile(int id)
     {
         var currentUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+        
         var user = await _context.Users
             .Include(u => u.UserData)
             .Include(u => u.UserStatistics)
@@ -244,16 +245,18 @@ public class UsersController : ControllerBase
 
         if (user == null) return NotFound();
 
-        return Ok(new {
-            id = user.Id,
-            login = user.Login,
-            description = user.UserData?.Description,
-            profileImage = user.UserData?.ProfileImage,
-            storiesStarted = user.UserStatistics?.StoriesStarted ?? 0,
-            storiesContributed = user.UserStatistics?.StoriesContributed ?? 0,
-            likesReceived = user.UserStatistics?.LikesReceived ?? 0,
-            isCurrentUser = currentUserId == id
-        });
+        return new UserProfileDto
+        {
+            Id = user.Id,
+            Login = user.Login,
+            Description = user.UserData?.Description ?? string.Empty,
+            ProfileImage = user.UserData?.ProfileImage ?? string.Empty,
+            StoriesStarted = user.UserStatistics?.StoriesStarted ?? 0,
+            StoriesContributed = user.UserStatistics?.StoriesContributed ?? 0,
+            LikesReceived = user.UserStatistics?.LikesReceived ?? 0,
+            CommentsReceived = user.UserStatistics?.CommentsReceived ?? 0,
+            IsCurrentUser = currentUserId == id
+        };
     }
 
     [HttpPut("{id}")]

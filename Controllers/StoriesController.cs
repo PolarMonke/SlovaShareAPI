@@ -197,6 +197,13 @@
             _context.Stories.Add(story);
             await _context.SaveChangesAsync();
 
+            var stats = await _context.UserStatistics.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (stats != null)
+            {
+                stats.StoriesStarted++;
+                await _context.SaveChangesAsync();
+            }
+
             return CreatedAtAction(
                 actionName: nameof(GetStory), 
                 controllerName: null,
@@ -358,9 +365,20 @@
                 {
                     return NotFound(new { Message = "Story not found" });
                 }
+
                 if (!story.IsEditable)
                 {
                     return BadRequest(new { Message = "This story is not currently editable" });
+                }
+
+                if (story.OwnerId != userId)
+                {
+                    var stats = await _context.UserStatistics.FirstOrDefaultAsync(s => s.UserId == userId);
+                    if (stats != null)
+                    {
+                        stats.StoriesContributed++;
+                        await _context.SaveChangesAsync();
+                    }
                 }
 
                 var nextOrder = story.Parts.Any() ? story.Parts.Max(p => p.Order) + 1 : 1;
@@ -522,35 +540,28 @@
         public async Task<IActionResult> ToggleLike(int id)
         {
             var userId = GetUserId();
-
             var story = await _context.Stories.FindAsync(id);
-            if (story == null)
-            {
-                return NotFound(new { Message = "Story not found" });
-            }
+            if (story == null) return NotFound();
 
             var like = await _context.Likes.FirstOrDefaultAsync(l => l.StoryId == id && l.UserId == userId);
             
             if (like != null)
             {
                 _context.Likes.Remove(like);
-                await _context.SaveChangesAsync();
-                return Ok(new { Message = "Like removed", Liked = false });
+                var ownerStats = await _context.UserStatistics.FirstOrDefaultAsync(s => s.UserId == story.OwnerId);
+                if (ownerStats != null) ownerStats.LikesReceived--;
             }
             else
             {
-                var newLike = new Like
-                {
-                    StoryId = id,
-                    UserId = userId,
-                    CreatedAt = DateTime.UtcNow
-                };
-                
-                _context.Likes.Add(newLike);
-                await _context.SaveChangesAsync();
-                return Ok(new { Message = "Story liked", Liked = true });
+                _context.Likes.Add(new Like { StoryId = id, UserId = userId });
+                var ownerStats = await _context.UserStatistics.FirstOrDefaultAsync(s => s.UserId == story.OwnerId);
+                if (ownerStats != null) ownerStats.LikesReceived++;
             }
+
+            await _context.SaveChangesAsync();
+            return Ok();
         }
+
         [HttpGet("{id}/like/status")]
         [Authorize]
         public async Task<ActionResult<LikeStatusDto>> GetLikeStatus(int id)
@@ -587,6 +598,13 @@
             await _context.SaveChangesAsync();
 
             var author = await _context.Users.FindAsync(userId);
+
+            if (story.OwnerId != userId)
+            {
+                var ownerStats = await _context.UserStatistics.FirstOrDefaultAsync(s => s.UserId == story.OwnerId);
+                if (ownerStats != null) ownerStats.CommentsReceived++;
+                await _context.SaveChangesAsync();
+            }
 
             return CreatedAtAction(
                 nameof(GetStory), 
