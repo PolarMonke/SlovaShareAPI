@@ -55,4 +55,7 @@ public class StoryResponseDto
     // Optional: Full parts if needed (otherwise use PartsCount)
     public IEnumerable<StoryPartResponseDto>? Parts { get; set; }
 }
-
+public class LikeStatusDto
+{
+    public bool IsLiked { get; set; }
+}
