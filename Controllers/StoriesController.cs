@@ -345,54 +345,64 @@ public class StoriesController : ControllerBase
     [HttpPost("{storyId}/parts")]
     public async Task<ActionResult<StoryPartResponseDto>> AddPart(int storyId, StoryPartCreateDto partDto)
     {
-        var userId = GetUserId();
-
-        var story = await _context.Stories
-        .Include(s => s.Parts)
-        .FirstOrDefaultAsync(s => s.Id == storyId);
-        if (story == null)
+        try
         {
-            return NotFound(new { Message = "Story not found" });
-        }
-        if (!story.IsEditable)
-        {
-            return BadRequest(new { Message = "This story is not currently editable" });
-        }
+            var userId = GetUserId();
 
-        var nextOrder = story.Parts.Any() ? story.Parts.Max(p => p.Order) + 1 : 1;
-
-        var newPart = new StoryPart
-        {
-            Content = partDto.Content?.Trim() ?? throw new ArgumentNullException(nameof(partDto.Content)),
-            Order = nextOrder,
-            AuthorId = userId,
-            StoryId = storyId,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-         _context.StoryParts.Add(newPart);
-        story.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-
-        return CreatedAtAction(
-        nameof(GetStory), 
-        new { id = storyId }, 
-        new StoryPartResponseDto
-        {
-            Id = newPart.Id,
-            Content = newPart.Content,
-            Order = newPart.Order,
-            CreatedAt = newPart.CreatedAt,
-            UpdatedAt = newPart.UpdatedAt,
-            Author = new UserResponseDto
+            var story = await _context.Stories
+            .Include(s => s.Parts)
+            .FirstOrDefaultAsync(s => s.Id == storyId);
+            if (story == null)
             {
-                Id = userId,
-                Login = User.Identity?.Name ?? string.Empty
+                return NotFound(new { Message = "Story not found" });
             }
-        });
+            if (!story.IsEditable)
+            {
+                return BadRequest(new { Message = "This story is not currently editable" });
+            }
+
+            var nextOrder = story.Parts.Any() ? story.Parts.Max(p => p.Order) + 1 : 1;
+
+            var newPart = new StoryPart
+            {
+                Content = partDto.Content?.Trim() ?? throw new ArgumentNullException(nameof(partDto.Content)),
+                Order = nextOrder,
+                AuthorId = userId,
+                StoryId = storyId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.StoryParts.Add(newPart);
+            story.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(
+            nameof(GetStory), 
+            new { id = storyId }, 
+            new StoryPartResponseDto
+            {
+                Id = newPart.Id,
+                Content = newPart.Content,
+                Order = newPart.Order,
+                CreatedAt = newPart.CreatedAt,
+                UpdatedAt = newPart.UpdatedAt,
+                Author = new UserResponseDto
+                {
+                    Id = userId,
+                    Login = User.Identity?.Name ?? string.Empty
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"CRITICAL ERROR: {ex}");
+            return StatusCode(500, "Internal server error");
+        }
+        
 
     }
+
     [HttpPut("{storyId}/parts/{partId}")]
     [Authorize]
     public async Task<IActionResult> UpdatePart(int storyId, int partId, StoryPartUpdateDto partDto)
