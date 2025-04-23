@@ -1,31 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
-public class StoryCreateDto
-{
-    [Required, StringLength(100)]
-    public string? Title { get; set; }
-    
-    [StringLength(5000)]
-    public string? Description { get; set; }
-    
-    public bool IsPublic { get; set; } = true;
-    public string? CoverImageUrl { get; set; }
-    public string[] StoryTags { get; set; } = Array.Empty<string>();
-    public string? InitialContent { get; set; }
-}
-public class StoryUpdateDto
-{
-    [StringLength(100)]
-    public string? Title { get; set; }
-    
-    [StringLength(5000)]
-    public string? Description { get; set; }
-    
-    public bool? IsPublic { get; set; }
-    public string? CoverImageUrl { get; set; }
-    public string[]? Tags { get; set; }
-}
-
 public class StoryResponseDto
 {
     public int Id { get; set; }
@@ -54,8 +26,4 @@ public class StoryResponseDto
     
     // Optional: Full parts if needed (otherwise use PartsCount)
     public IEnumerable<StoryPartResponseDto>? Parts { get; set; }
-}
-public class LikeStatusDto
-{
-    public bool IsLiked { get; set; }
 }
