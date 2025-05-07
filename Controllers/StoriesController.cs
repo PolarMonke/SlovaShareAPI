@@ -157,7 +157,7 @@
                 IsPublic = storyDto.IsPublic,
                 CoverImageUrl = storyDto.CoverImageUrl?.Trim(),
                 OwnerId = userId,
-                Owner = user,  // Set the owner explicitly
+                Owner = user,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -306,45 +306,50 @@
         public async Task<IActionResult> DeleteStory(int id)
         {
             var userId = GetUserId();
-        
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            
+            var executionStrategy = _context.Database.CreateExecutionStrategy();
+            
+            return await executionStrategy.ExecuteAsync(async () =>
             {
-                var story = await _context.Stories
-                    .Include(s => s.Parts)
-                    .Include(s => s.StoryTags)
-                    .Include(s => s.Likes)
-                    .Include(s => s.Comments)
-                    .Include(s => s.Reports)
-                    .FirstOrDefaultAsync(s => s.Id == id);
-
-                if (story == null)
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    return NotFound();
+                    var story = await _context.Stories
+                        .Include(s => s.Parts)
+                        .Include(s => s.StoryTags)
+                        .Include(s => s.Likes)
+                        .Include(s => s.Comments)
+                        .Include(s => s.Reports)
+                        .FirstOrDefaultAsync(s => s.Id == id);
+
+                    if (story == null)
+                    {
+                        return (IActionResult)NotFound();
+                    }
+                    if (story.OwnerId != userId)
+                    {
+                        return Forbid();
+                    }
+
+                    _context.StoryParts.RemoveRange(story.Parts);
+                    _context.StoryTags.RemoveRange(story.StoryTags);
+                    _context.Likes.RemoveRange(story.Likes);
+                    _context.Comments.RemoveRange(story.Comments);
+                    _context.Reports.RemoveRange(story.Reports);
+
+                    _context.Stories.Remove(story);
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(new { Message = "Story Deleted" });
                 }
-                if (story.OwnerId != userId)
+                catch
                 {
-                    return Forbid();
+                    await transaction.RollbackAsync();
+                    throw;
                 }
-
-                _context.StoryParts.RemoveRange(story.Parts);
-                _context.StoryTags.RemoveRange(story.StoryTags);
-                _context.Likes.RemoveRange(story.Likes);
-                _context.Comments.RemoveRange(story.Comments);
-                _context.Reports.RemoveRange(story.Reports);
-
-                _context.Stories.Remove(story);
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return NoContent();
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+            });
         }
 
         #endregion
