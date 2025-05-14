@@ -28,6 +28,7 @@ builder.Services.AddSingleton<ITelegramBotClient>(provider =>
 builder.Services.AddHostedService<TelegramBotWorker>();
 
 builder.Services.AddScoped<TelegramBotService>();
+builder.Services.AddScoped<EmailService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(

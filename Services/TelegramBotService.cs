@@ -5,6 +5,7 @@ using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 using Microsoft.EntityFrameworkCore;
 using Telegram.Bot.Polling;
+using System.Net;
 
 namespace Backend;
 
@@ -15,22 +16,24 @@ public class TelegramBotService : IHostedService
     private readonly ILogger<TelegramBotService> _logger;
     private readonly string _adminPassword;
     private readonly List<long> _adminChatIds;
+    private readonly EmailService _emailService;
 
     private readonly Dictionary<long, bool> _authenticatedAdmins = new();
-    private readonly Dictionary<long, string> _pendingActions = new();
+    private readonly Dictionary<long, (string Action, int TargetId)> _pendingActions = new();
 
     public TelegramBotService(
         ITelegramBotClient botClient,
         IServiceProvider serviceProvider,
         ILogger<TelegramBotService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        EmailService emailService)
     {
         _botClient = botClient;
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _emailService = emailService;
 
         var botSettings = configuration.GetSection("Telegram");
-
         _adminPassword = botSettings["AdminPassword"] ?? "defaultPassword";
         var adminIds = botSettings["AdminIds"] ?? "";
         _adminChatIds = adminIds.Split(',')
@@ -40,19 +43,27 @@ public class TelegramBotService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var receiverOptions = new ReceiverOptions
+        try
         {
-            AllowedUpdates = Array.Empty<UpdateType>(),
-            DropPendingUpdates = true,
-        };
+            var receiverOptions = new ReceiverOptions
+            {
+                AllowedUpdates = Array.Empty<UpdateType>(),
+                DropPendingUpdates = true,
+            };
 
-        _botClient.StartReceiving(
-            updateHandler: HandleUpdateAsync,
-            errorHandler: HandleErrorAsync,
-            receiverOptions: receiverOptions,
-            cancellationToken: cancellationToken);
+            _botClient.StartReceiving(
+                updateHandler: HandleUpdateAsync,
+                errorHandler: HandleErrorAsync,
+                receiverOptions: receiverOptions,
+                cancellationToken: cancellationToken);
 
-        _logger.LogInformation("Telegram bot started");
+            _logger.LogInformation("Telegram bot started");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start Telegram bot");
+            throw;
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -106,14 +117,14 @@ public class TelegramBotService : IHostedService
 
         if (_pendingActions.TryGetValue(chatId, out var pendingAction))
         {
-            switch (pendingAction)
+            switch (pendingAction.Action)
             {
                 case "ban_story":
-                    await CompleteStoryBan(chatId, messageText, cancellationToken);
+                    await CompleteStoryBan(chatId, messageText, pendingAction.TargetId, cancellationToken);
                     _pendingActions.Remove(chatId);
                     return;
                 case "warn_user":
-                    await CompleteUserWarning(chatId, messageText, cancellationToken);
+                    await CompleteUserWarning(chatId, messageText, pendingAction.TargetId, cancellationToken);
                     _pendingActions.Remove(chatId);
                     return;
             }
@@ -122,7 +133,7 @@ public class TelegramBotService : IHostedService
         switch (messageText)
         {
             case "🚫 Ban Story":
-                await RequestStoryIdForBan(chatId, cancellationToken);
+                await ListReportedStories(chatId, cancellationToken);
                 break;
             case "⚠️ Warn User":
                 await RequestUserIdForWarning(chatId, cancellationToken);
@@ -133,25 +144,15 @@ public class TelegramBotService : IHostedService
             default:
                 if (int.TryParse(messageText, out var id))
                 {
-                    if (_pendingActions.TryGetValue(chatId, out var action))
+                    if (!_pendingActions.ContainsKey(chatId))
                     {
-                        switch (action)
-                        {
-                            case "ban_story_input":
-                                _pendingActions[chatId] = "ban_story";
-                                await botClient.SendMessage(
-                                    chatId: chatId,
-                                    text: $"Please enter the reason for banning story (ID: {id}):",
-                                    cancellationToken: cancellationToken);
-                                return;
-                            case "warn_user_input":
-                                _pendingActions[chatId] = "warn_user";
-                                await botClient.SendMessage(
-                                    chatId: chatId,
-                                    text: $"Please enter warning message for user (ID: {id}):",
-                                    cancellationToken: cancellationToken);
-                                return;
-                        }
+                        // Assume this is a story ID from the reports list
+                        _pendingActions[chatId] = ("ban_story", id);
+                        await botClient.SendMessage(
+                            chatId: chatId,
+                            text: $"Please enter the reason for banning story (ID: {id}):",
+                            cancellationToken: cancellationToken);
+                        return;
                     }
                 }
                 await ShowMainMenu(chatId, cancellationToken);
@@ -177,28 +178,60 @@ public class TelegramBotService : IHostedService
             cancellationToken: cancellationToken);
     }
 
-    private async Task RequestStoryIdForBan(long chatId, CancellationToken cancellationToken)
+    private async Task ListReportedStories(long chatId, CancellationToken cancellationToken)
     {
-        _pendingActions[chatId] = "ban_story_input";
-        await _botClient.SendMessage(
-            chatId: chatId,
-            text: "Please enter the Story ID to ban:",
-            replyMarkup: new ReplyKeyboardRemove(),
-            cancellationToken: cancellationToken);
-    }
-
-    private async Task CompleteStoryBan(long chatId, string input, CancellationToken cancellationToken)
-    {
-        var parts = input.Split(':', 2);
-        if (parts.Length != 2 || !int.TryParse(parts[0], out var storyId))
+        try
         {
+            using var scope = _serviceProvider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var reportedStories = await dbContext.Reports
+                .Include(r => r.Story)
+                .ThenInclude(s => s.Owner)
+                .Include(r => r.User)
+                .OrderByDescending(r => r.CreatedAt)
+                .Take(10)
+                .ToListAsync();
+
+            if (!reportedStories.Any())
+            {
+                await _botClient.SendMessage(
+                    chatId: chatId,
+                    text: "No reported stories found.",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            var message = "📋 Reported Stories:\n\n" + string.Join("\n\n", 
+                reportedStories.Select(r => 
+                    $"📖 Story: {r.Story.Title} (ID: {r.StoryId})\n" +
+                    $"👤 Author: {r.Story.Owner.Login}\n" +
+                    $"⚠️ Reason: {r.Reason}\n" +
+                    $"📄 Details: {r.Content}\n" +
+                    $"🕒 Reported at: {r.CreatedAt:g}"));
+
             await _botClient.SendMessage(
                 chatId: chatId,
-                text: "❌ Invalid format. Please use: storyId:reason",
+                text: message,
                 cancellationToken: cancellationToken);
-            return;
-        }
 
+            await _botClient.SendMessage(
+                chatId: chatId,
+                text: "Enter the Story ID to ban or /menu to return:",
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error listing reported stories");
+            await _botClient.SendMessage(
+                chatId: chatId,
+                text: "❌ Error fetching reported stories",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task CompleteStoryBan(long chatId, string reason, int storyId, CancellationToken cancellationToken)
+    {
         try
         {
             using var scope = _serviceProvider.CreateScope();
@@ -210,6 +243,7 @@ public class TelegramBotService : IHostedService
                 .Include(s => s.Likes)
                 .Include(s => s.Comments)
                 .Include(s => s.Reports)
+                .Include(s => s.Owner)
                 .FirstOrDefaultAsync(s => s.Id == storyId);
 
             if (story == null)
@@ -221,6 +255,7 @@ public class TelegramBotService : IHostedService
                 return;
             }
 
+            // Delete the story
             dbContext.StoryParts.RemoveRange(story.Parts);
             dbContext.StoryTags.RemoveRange(story.StoryTags);
             dbContext.Likes.RemoveRange(story.Likes);
@@ -230,9 +265,28 @@ public class TelegramBotService : IHostedService
 
             await dbContext.SaveChangesAsync();
 
+            // Notify the author
+            if (!string.IsNullOrEmpty(story.Owner.Email))
+            {
+                try
+                {
+                    await _emailService.SendEmailAsync(
+                        story.Owner.Email,
+                        "Your story has been removed",
+                        $"Dear {story.Owner.Login},\n\n" +
+                        $"Your story \"{story.Title}\" has been removed for the following reason:\n\n" +
+                        $"{reason}\n\n" +
+                        $"If you believe this is a mistake, please contact support.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send email notification");
+                }
+            }
+
             await _botClient.SendMessage(
                 chatId: chatId,
-                text: $"✅ Story deleted: {story.Title}\nID: {storyId}\nReason: {parts[1]}",
+                text: $"✅ Story deleted: {story.Title}\nID: {storyId}\nReason: {reason}",
                 cancellationToken: cancellationToken);
         }
         catch (Exception ex)
@@ -247,7 +301,6 @@ public class TelegramBotService : IHostedService
 
     private async Task RequestUserIdForWarning(long chatId, CancellationToken cancellationToken)
     {
-        _pendingActions[chatId] = "warn_user_input";
         await _botClient.SendMessage(
             chatId: chatId,
             text: "Please enter the User ID to warn:",
@@ -255,18 +308,8 @@ public class TelegramBotService : IHostedService
             cancellationToken: cancellationToken);
     }
 
-    private async Task CompleteUserWarning(long chatId, string input, CancellationToken cancellationToken)
+    private async Task CompleteUserWarning(long chatId, string warning, int userId, CancellationToken cancellationToken)
     {
-        var parts = input.Split(':', 2);
-        if (parts.Length != 2 || !int.TryParse(parts[0], out var userId))
-        {
-            await _botClient.SendMessage(
-                chatId: chatId,
-                text: "❌ Invalid format. Please use: userId:warning",
-                cancellationToken: cancellationToken);
-            return;
-        }
-
         try
         {
             using var scope = _serviceProvider.CreateScope();
@@ -282,12 +325,20 @@ public class TelegramBotService : IHostedService
                 return;
             }
 
-            // Here you would implement your warning logic
-            // For example, send an email or store the warning in database
+            if (!string.IsNullOrEmpty(user.Email))
+            {
+                await _emailService.SendEmailAsync(
+                    user.Email,
+                    "Warning from administration",
+                    $"Dear {user.Login},\n\n" +
+                    $"You have received a warning from the administration:\n\n" +
+                    $"{warning}\n\n" +
+                    $"Please review our community guidelines.");
+            }
 
             await _botClient.SendMessage(
                 chatId: chatId,
-                text: $"⚠️ User warned: {user.Login}\nID: {userId}\nWarning: {parts[1]}",
+                text: $"⚠️ User warned: {user.Login}\nID: {userId}\nWarning: {warning}",
                 cancellationToken: cancellationToken);
         }
         catch (Exception ex)
