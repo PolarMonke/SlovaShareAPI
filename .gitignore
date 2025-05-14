@@ -7,3 +7,4 @@ appsettings.Development.json
 appsettings.local.json
 appsettings.private.json
 appsettings.json
+.env

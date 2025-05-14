@@ -6,6 +6,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.StaticFiles;
+using Telegram.Bot;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,20 @@ builder.Services.AddControllers();
 
 builder.Services.AddMemoryCache();
 builder.Services.AddTransient<EmailService>();
+
+builder.Services.AddHttpClient();
+
+builder.Services.AddSingleton<ITelegramBotClient>(provider => 
+{
+    var configuration = provider.GetRequiredService<IConfiguration>();
+    var botToken = configuration["Telegram:BotToken"] 
+        ?? throw new ArgumentNullException("Telegram:BotToken configuration is not set");
+    return new TelegramBotClient(botToken);
+});
+
+builder.Services.AddHostedService<TelegramBotWorker>();
+
+builder.Services.AddScoped<TelegramBotService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(
