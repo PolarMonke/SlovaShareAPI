@@ -120,6 +120,17 @@ public class TelegramBotService : IHostedService
             switch (pendingAction.Action)
             {
                 case "ban_story":
+                    if (int.TryParse(messageText, out var storyId))
+                    {
+                        _pendingActions[chatId] = ("ban_story_reason", storyId);
+                        await botClient.SendMessage(
+                            chatId: chatId,
+                            text: $"Please enter the reason for banning story ID {storyId}:",
+                            cancellationToken: cancellationToken);
+                        return;
+                    }
+                    break;
+                case "ban_story_reason":
                     await CompleteStoryBan(chatId, messageText, pendingAction.TargetId, cancellationToken);
                     _pendingActions.Remove(chatId);
                     return;
@@ -132,7 +143,7 @@ public class TelegramBotService : IHostedService
                     }
                     else if (int.TryParse(messageText, out var userId))
                     {
-                        _pendingActions[chatId] = ("warn_user", userId);
+                        _pendingActions[chatId] = ("warn_user_reason", userId);
                         await botClient.SendMessage(
                             chatId: chatId,
                             text: $"Please enter the warning message for user ID {userId}:",
@@ -146,6 +157,7 @@ public class TelegramBotService : IHostedService
         switch (messageText)
         {
             case "🚫 Ban Story":
+                _pendingActions[chatId] = ("ban_story", 0);
                 await ListReportedStories(chatId, cancellationToken);
                 break;
             case "⚠️ Warn User":
@@ -161,8 +173,22 @@ public class TelegramBotService : IHostedService
                 await ShowMainMenu(chatId, cancellationToken);
                 break;
             default:
-                _pendingActions.Remove(chatId);
-                await ShowMainMenu(chatId, cancellationToken);
+                // Check if this is a response to the story listing
+                if (_pendingActions.TryGetValue(chatId, out var action) && 
+                    action.Action == "ban_story" && 
+                    int.TryParse(messageText, out var storyIdToBan))
+                {
+                    _pendingActions[chatId] = ("ban_story_reason", storyIdToBan);
+                    await botClient.SendMessage(
+                        chatId: chatId,
+                        text: $"Please enter the reason for banning story ID {storyIdToBan}:",
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    _pendingActions.Remove(chatId);
+                    await ShowMainMenu(chatId, cancellationToken);
+                }
                 break;
         }
     }
