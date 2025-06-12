@@ -24,7 +24,7 @@
             try
             {
                 var userId = GetUserId();
-                Console.WriteLine($"User {userId} attempting to add part to story {storyId}"); // Debug log
+            Console.WriteLine($"User {userId} attempting to add part to story {storyId}");
 
                 var story = await _context.Stories
                     .Include(s => s.Parts)
@@ -32,24 +32,22 @@
                 
                 if (story == null)
                 {
-                    Console.WriteLine("Story not found"); // Debug log
+                    Console.WriteLine("Story not found");
                     return NotFound(new { Message = "Story not found" });
                 }
 
                 if (!story.IsEditable)
                 {
-                    Console.WriteLine("Story not editable"); // Debug log
+                    Console.WriteLine("Story not editable");
                     return BadRequest(new { Message = "This story is not currently editable" });
                 }
 
-                // Validate content
                 if (string.IsNullOrWhiteSpace(partDto.Content))
                 {
                     Console.WriteLine("Empty content provided"); // Debug log
                     return BadRequest(new { Message = "Part content cannot be empty" });
                 }
 
-                // Update contributor stats if not the owner
                 if (story.OwnerId != userId)
                 {
                     var stats = await _context.UserStatistics.FirstOrDefaultAsync(s => s.UserId == userId);
